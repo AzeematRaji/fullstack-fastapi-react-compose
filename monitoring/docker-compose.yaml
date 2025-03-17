@@ -1,8 +1,6 @@
-version: '3.8'
-
 networks:
   app-mon-network:
-    driver: bridge 
+    external: true
 
 services:
   prometheus:
@@ -19,6 +17,8 @@ services:
       - "traefik.http.routers.prometheus.rule=Host(`${DOMAIN}`) && PathPrefix(`/prometheus`)"
       - "traefik.http.routers.prometheus.entrypoints=web"
       - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.middlewares.prometheus-stripprefix.stripprefix.prefixes=/prometheus"
+      - "traefik.http.routers.prometheus.middlewares=prometheus-stripprefix"
       - "traefik.http.routers.prometheus.tls.certresolver=myresolver"
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
 
@@ -27,13 +27,13 @@ services:
     container_name: grafana
     volumes:
       - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin  
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
     secrets:
       - grafana_admin_password
-    ports:
-      - "3000:3000"
     networks:
       - app-mon-network
     depends_on:
