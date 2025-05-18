@@ -1,15 +1,28 @@
 services:
   backend:
     build: ./backend
-    labels: 
+    labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.entrypoints=web"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      #- "traefik.http.routers.backend.rule=Host(`localhost`) && PathPrefix(`/api`)"
-      #- "traefik.http.routers.backend.rule=Host(`api.localhost`)"
       - "traefik.http.routers.backend.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.priority=2"
+      - "traefik.http.middlewares.backend-strip-prefix.stripprefix.prefixes=/api"
       - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+      - "traefik.http.routers.backend.tls=true"
+      - "traefik.http.routers.backend.tls.certresolver=myresolver"  
+      - "traefik.http.routers.backend.middlewares=backend-strip-prefix"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+
+      
+      #- "traefik.http.routers.backend-docs.rule=Host(`${DOMAIN}`) && (PathPrefix(`/docs`)"
+      #- "traefik.http.routers.backend-docs.entrypoints=websecure"
+      #- "traefik.http.routers.backend-docs.tls=true"
+      #- "traefik.http.routers.backend-docs.middlewares=docs-rewrite"
+      #- "traefik.http.routers.backend-docs.service=backend"
+
+       # Middleware to rewrite /docs → /api/v1/docs
+      #- "traefik.http.middlewares.docs-rewrite.stripprefixregex.regex=^/docs"
+      #- "traefik.http.middlewares.docs-rewrite.addprefix.prefix=/api/v1/docs"
+
 
     depends_on:
       - db
@@ -22,13 +35,12 @@ services:
     build: ./frontend 
     labels:
       - "traefik.enable=true"
-      #- "traefik.http.routers.frontend.rule=Host(`localhost`)"
-      - "traefik.http.routers.frontend.entrypoints=web"
       - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.routers.frontend.tls.certresolver=myresolver"
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
- 
     depends_on:
       - backend
     env_file:
@@ -59,13 +71,15 @@ services:
     depends_on:
       - db
     labels:
-      #- "traefik.http.routers.adminer.rule=Host(`localhost`) && PathPrefix(`/db`)"
-      - "traefik.http.routers.adminer.entrypoints=web"
       - "traefik.enable=true"
-      - "traefik.http.routers.adminer.rule=Host(`db.${DOMAIN}`)"
+      - "traefik.http.routers.adminer.rule=Host(`db.${DOMAIN}`) || (Host(`${DOMAIN}`) && PathPrefix(`/db`))"
+      - "traefik.http.middlewares.adminer-strip.stripprefix.prefixes=/db"
+      - "traefik.http.routers.adminer.middlewares=adminer-strip"
       - "traefik.http.routers.adminer.entrypoints=websecure"
+      - "traefik.http.routers.adminer.tls=true"
       - "traefik.http.routers.adminer.tls.certresolver=myresolver"
       - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+      - "traefik.http.routers.adminer.priority=10"
 
     networks:
       - app-mon-network
@@ -89,19 +103,23 @@ services:
 
     labels:
       - "traefik.enable=true"
-      # Redirect www to non-www
-      - "traefik.http.routers.redirect-www.rule=Host(`www.${DOMAIN}`)"
-      - "traefik.http.routers.redirect-www.entrypoints=websecure"
-      - "traefik.http.routers.redirect-www.middlewares=redirect-to-non-www"
-      - "traefik.http.routers.redirect-www.tls.certresolver=myresolver"
-
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.regex=^https?://www\\.(.*)"
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.replacement=https://$1"
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.permanent=true"
+      # Dashboard configuration
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=myresolver"
+      # Global redirect HTTP to HTTPS
+      - "traefik.http.middlewares.httpsredirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.httpsredirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.redirs.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirs.entrypoints=web"
+      - "traefik.http.routers.redirs.middlewares=httpsredirect"
 
     ports:
       - "80:80"
       - "443:443"
+      - "9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./letsencrypt:/letsencrypt
